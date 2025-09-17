@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { View, Text, Button, Image, TextInput, StyleSheet, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import * as FileSystem from "expo-file-system/legacy";
 import { supabase } from "../../supabaseClient";
-
+import * as FileSystem from "expo-file-system/legacy";
+import {  StatusBar } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 type LocationCoords = {
   latitude: number;
   longitude: number;
@@ -15,68 +16,68 @@ export default function HomeScreen() {
   const [location, setLocation] = useState<LocationCoords | null>(null);
   const [description, setDescription] = useState<string>("");
 
-  // Get user location on load
-  useEffect(() => {
-    (async () => {
+  // Open camera and fetch location
+  const openCamera = async () => {
+    try {
+      // Request location permission
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         Alert.alert("Permission to access location was denied");
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({});
+
+      // Fetch current location
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Highest,
+        maximumAge: 10000,
+        timeout: 5000,
+      });
       setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-    })();
-  }, []);
 
-  // Open camera
-  const openCamera = async () => {
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, // fixed: use enum value as per API
-      quality: 0.7,
-    });
+      // Launch camera
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+      });
 
-    if (!result.canceled) {
-      setPhoto(result.assets[0].uri);
+      if (!result.canceled) {
+        setPhoto(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.error("Camera/Location error:", err);
+      Alert.alert("❌ Unable to fetch location or open camera");
     }
   };
 
   // Upload image to Supabase Storage
-const uploadImage = async (uri: string): Promise<string | null> => {
-  try {
-    const fileExt = uri.split(".").pop() ?? "jpg";
-    const fileName = `${Date.now()}.${fileExt}`;
-    const filePath = `issues/${fileName}`;
+  const uploadImage = async (uri: string): Promise<string | null> => {
+    try {
+      const fileExt = uri.split(".").pop() ?? "jpg";
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `issues/${fileName}`;
 
-    // Read file as base64
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-
-    // Convert base64 → binary
-    const binary = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-
-    // Upload to Supabase
-    const { error } = await supabase.storage
-      .from("issues-images")
-      .upload(filePath, binary, {
-        contentType: `image/${fileExt}`,
-        upsert: true,
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
       });
 
-    if (error) throw error;
+      const binary = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 
-    // Get public URL
-    const { data } = supabase.storage
-      .from("issues-images")
-      .getPublicUrl(filePath);
+      const { error } = await supabase.storage
+        .from("issues-images")
+        .upload(filePath, binary, {
+          contentType: `image/${fileExt}`,
+          upsert: true,
+        });
 
-    return data.publicUrl;
-  } catch (err) {
-    console.error("Upload error:", err);
-    return null;
-  }
-};
+      if (error) throw error;
 
+      const { data } = supabase.storage.from("issues-images").getPublicUrl(filePath);
+      return data.publicUrl;
+    } catch (err) {
+      console.error("Upload error:", err);
+      return null;
+    }
+  };
 
   // Submit report
   const handleSubmit = async () => {
@@ -120,7 +121,8 @@ const uploadImage = async (uri: string): Promise<string | null> => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
+       <StatusBar barStyle="dark-content" backgroundColor="#f3f3f3ff" />
       <Text style={styles.header}>📍 Civic Issue Reporter</Text>
 
       <Button title="📸 Take a Photo" onPress={openCamera} />
@@ -141,7 +143,7 @@ const uploadImage = async (uri: string): Promise<string | null> => {
       />
 
       <Button title="🚀 Submit Report" onPress={handleSubmit} />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -149,7 +151,7 @@ const uploadImage = async (uri: string): Promise<string | null> => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0e0d0dff",
+    backgroundColor: "#ffffffff",
     alignItems: "center",
     justifyContent: "center",
     padding: 20,
@@ -158,7 +160,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "bold",
     marginBottom: 20,
-    color: "white",
+    color: "black",
   },
   imagePreview: {
     width: 250,
@@ -169,15 +171,15 @@ const styles = StyleSheet.create({
   locationText: {
     marginVertical: 10,
     fontSize: 14,
-    color: "white",
+    color: "black",
   },
   input: {
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#0c0c0cff",
     padding: 10,
     width: "100%",
     marginVertical: 15,
     borderRadius: 8,
-    backgroundColor: "#fff",
+    backgroundColor: "#ffffffff",
   },
 });
