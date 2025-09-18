@@ -6,10 +6,9 @@ export default function SignIn() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // Example: redirect if already logged in
   useEffect(() => {
     if (isLoggedIn) {
-      router.replace('/(tabs)/dashboard');
+      router.replace('/dashboard'); // redirect to default tab
     }
   }, [isLoggedIn]);
 

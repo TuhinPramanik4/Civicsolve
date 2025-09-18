@@ -1,355 +1,272 @@
-import * as ImagePicker from "expo-image-picker";
-import * as Location from "expo-location";
-import React, { useState } from "react";
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Image,
-  ScrollView,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
-} from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+  TouchableWithoutFeedback,
+  View,
+} from 'react-native';
 
-import { supabase } from "../../supabaseClient";
+export default function SignIn() {
+  const router = useRouter();
+  const [mobile, setMobile] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  // Simple validation (adjust rules as you like)
+  const isValidPhone = /^\d{10}$/.test(mobile);
+  const isValidPassword = password.length >= 6;
+  const canSubmit = isValidPhone && isValidPassword && !isLoggingIn;
 
+  useEffect(() => {
+    // example: if user already logged in -> redirect
+    // if (userAlreadyLoggedIn) router.replace('/(tabs)/dashboard');
+  }, []);
 
-type LocationCoords = {
-  latitude: number;
-  longitude: number;
-};
-
-type AddressInfo = {
-  city?: string;
-  district?: string;
-  region?: string;
-  postalCode?: string;
-  country?: string;
-};
-
-export default function HomeScreen() {
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("");
-  const [priority, setPriority] = useState<"Low" | "Medium" | "High">("Medium");
-  const [description, setDescription] = useState("");
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [location, setLocation] = useState<LocationCoords | null>(null);
-  const [address, setAddress] = useState<AddressInfo | null>(null);
-
-  // Pick photo from gallery
- // Pick photo from gallery
-const pickFromGallery = async () => {
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (status !== "granted") {
-    Alert.alert("Permission denied", "Gallery access is required");
-    return;
+  function handleSignIn() {
+    if (!canSubmit) return;
+    setIsLoggingIn(true);
+    // Simulate auth delay
+    setTimeout(() => {
+      setIsLoggingIn(false);
+      // on success navigate
+      router.replace('/dashboard');
+    }, 900);
   }
 
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaType.Images,
-    quality: 0.7,
-  });
-
-  if (!result.canceled) {
-    setPhoto(result.assets[0].uri);
-  }
-};
-
-
-  // Take photo from camera
-  const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission denied", "Camera access is required");
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 0.7,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    });
-
-    if (!result.canceled) {
-      setPhoto(result.assets[0].uri);
-    }
-  };
-
-  // Fetch location
-  const fetchLocation = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission denied", "Allow location access to continue");
-        return;
-      }
-
-      const loc = await Location.getCurrentPositionAsync({});
-      setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-
-      const addr = await Location.reverseGeocodeAsync(loc.coords);
-      if (addr.length > 0) {
-        const place = addr[0];
-        setAddress({
-          city: place.city ?? place.subregion ?? undefined,
-          district: place.subregion ?? undefined,
-          region: place.region ?? undefined,
-          postalCode: place.postalCode ?? undefined,
-          country: place.country ?? undefined,
-        });
-      }
-    } catch (err) {
-      console.error("Location error:", err);
-      Alert.alert("❌ Error fetching location");
-    }
-  };
-
-  const uploadImage = async (uri: string): Promise<string | null> => {
-  try {
-    // Extract file extension
-    const fileExt = uri.split(".").pop() ?? "jpg";
-    const fileName = `${Date.now()}.${fileExt}`;
-    const filePath = `issues/${fileName}`;
-
-    // Upload using Supabase Storage SDK
-    const { data, error } = await supabase.storage
-      .from("issues-images")
-      .upload(filePath, uri, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: `image/${fileExt}`,
-      });
-
-    if (error) {
-      console.error("Upload error:", error.message);
-      return null;
-    }
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from("issues-images")
-      .getPublicUrl(filePath);
-
-    return urlData.publicUrl;
-  } catch (err) {
-    console.error("Unexpected error:", err);
-    return null;
-  }
-};
-
-
-
-
-
-
-
-  // Submit report
-  const handleSubmit = async () => {
-    if (!title || !category || !location) {
-      Alert.alert("⚠️ Missing fields", "Please fill all required fields");
-      return;
-    }
-
-    try {
-      let imageUrl: string | null = null;
-      if (photo) {
-        imageUrl = await uploadImage(photo);
-        if (!imageUrl) {
-          Alert.alert("❌ Failed to upload image");
-          return;
-        }
-      }
-
-      const { error } = await supabase.from("issues").insert([
-        {
-          title,
-          category,
-          priority,
-          description,
-          img: imageUrl,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          city: address?.city,
-          district: address?.district,
-          region: address?.region,
-          postalcode: address?.postalCode,
-          country: address?.country,
-        },
-      ]);
-
-      if (error) throw error;
-
-      Alert.alert("✅ Report submitted!");
-      setTitle("");
-      setCategory("");
-      setPriority("Medium");
-      setDescription("");
-      setPhoto(null);
-      setLocation(null);
-      setAddress(null);
-    } catch (err: any) {
-      Alert.alert("❌ Submission failed", err.message);
-    }
-  };
-const insets = useSafeAreaInsets();
   return (
-   <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['top']}>
-  <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <Text style={styles.header}>Report an Issue</Text>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.page}>
+          <StatusBar
+            barStyle="dark-content"
+            backgroundColor="transparent"
+            translucent
+          />
 
-        {/* Title */}
-        <Text style={styles.label}>Title *</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Brief description of the issue"
-          value={title}
-          onChangeText={setTitle}
-        />
+          {/* Top gradient header */}
+          <LinearGradient
+            colors={["#0ea5e9", "#2563eb"]}
+            start={[0, 0]}
+            end={[1, 1]}
+            style={styles.header}
+          >
+            <Text style={styles.headerTitle}>Welcome back</Text>
+            <Text style={styles.headerSubtitle}>Sign in to continue</Text>
+          </LinearGradient>
 
-        {/* Category */}
-        <Text style={styles.label}>Category *</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Select a category"
-          value={category}
-          onChangeText={setCategory}
-        />
+          {/* Card */}
+          <View style={styles.card}>
+            {/* Mobile input */}
+            <Text style={styles.label}>Mobile number</Text>
+            <View style={styles.inputRow}>
+              <Text style={styles.countryCode}>+91</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="phone-pad"
+                placeholder="Enter 10-digit mobile"
+                placeholderTextColor="#9aa4b2"
+                value={mobile}
+                onChangeText={(t) => setMobile(t.replace(/[^0-9]/g, ''))}
+                maxLength={10}
+                returnKeyType="next"
+              />
+            </View>
+            {!isValidPhone && mobile.length > 0 && (
+              <Text style={styles.errorText}>Enter a valid 10-digit mobile</Text>
+            )}
 
-        {/* Priority */}
-        <Text style={styles.label}>Priority</Text>
-        <View style={styles.priorityRow}>
-          {["Low", "Medium", "High"].map((level) => (
-            <TouchableOpacity
-              key={level}
-              style={[
-                styles.priorityButton,
-                priority === level && styles.prioritySelected,
-              ]}
-              onPress={() => setPriority(level as "Low" | "Medium" | "High")}
-            >
-              <Text
-                style={[
-                  styles.priorityText,
-                  priority === level && styles.priorityTextSelected,
-                ]}
+            {/* Password input */}
+            <Text style={[styles.label, { marginTop: 18 }]}>Password</Text>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Your password"
+                placeholderTextColor="#9aa4b2"
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={setPassword}
+                returnKeyType="done"
+              />
+
+              <Pressable
+                onPress={() => setShowPassword((s) => !s)}
+                style={styles.eyeButton}
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
-                {level}
-              </Text>
+                <Text style={styles.eyeText}>{showPassword ? '🙈' : '👁️'}</Text>
+              </Pressable>
+            </View>
+            {!isValidPassword && password.length > 0 && (
+              <Text style={styles.errorText}>Password must be 6+ characters</Text>
+            )}
+
+            {/* Forgot row */}
+            <View style={styles.rowBetween}>
+              <TouchableOpacity>
+                <Text style={styles.forgot}>Forgot password?</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity>
+                <Text style={styles.help}>Need help?</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Sign in button */}
+            <TouchableOpacity
+              style={[
+                styles.button,
+                { opacity: canSubmit ? 1 : 0.6 },
+              ]}
+              onPress={handleSignIn}
+              disabled={!canSubmit}
+            >
+              <Text style={styles.buttonText}>{isLoggingIn ? 'Signing in...' : 'Sign In'}</Text>
             </TouchableOpacity>
-          ))}
-        </View>
 
-        {/* Description */}
-        <Text style={styles.label}>Description</Text>
-        <TextInput
-          style={[styles.input, { height: 100, textAlignVertical: "top" }]}
-          placeholder="Provide additional details about the issue"
-          multiline
-          value={description}
-          onChangeText={setDescription}
-        />
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={styles.line} />
+              <Text style={styles.orText}>or</Text>
+              <View style={styles.line} />
+            </View>
 
-        {/* Photo */}
-        <Text style={styles.label}>Add Photo</Text>
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <TouchableOpacity style={styles.photoButton} onPress={pickFromGallery}>
-            <Text style={{ color: "#007BFF" }}>📁 Gallery</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.photoButton} onPress={takePhoto}>
-            <Text style={{ color: "#007BFF" }}>📷 Camera</Text>
-          </TouchableOpacity>
-        </View>
+            {/* Secondary actions */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16 }}>
+              <TouchableOpacity style={styles.ghostBtn} onPress={() => router.push('/auth/signup')}>
+                <Text style={styles.ghostText}>Create account</Text>
+              </TouchableOpacity>
 
-        {photo && (
-          <View style={styles.photoBox}>
-            <Image source={{ uri: photo }} style={styles.photoPreview} />
+              <TouchableOpacity style={styles.ghostBtn} onPress={() => {}}>
+                <Text style={styles.ghostText}>Use OTP</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        )}
 
-        {/* Location */}
-        <Text style={styles.label}>Location</Text>
-        <TouchableOpacity style={styles.locationButton} onPress={fetchLocation}>
-          <Text style={{ color: "#007BFF" }}>📍 Use Current Location</Text>
-        </TouchableOpacity>
-        {location && (
-          <Text style={styles.locationText}>
-            {address?.city}, {address?.district}, {address?.region}{" "}
-            ({address?.postalCode})
-          </Text>
-        )}
-
-        {/* Submit */}
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitText}>Submit Report</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+          <Text style={styles.footer}>By continuing you agree to our Terms & Privacy</Text>
+        </View>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#ffffffff", padding: 20 },
-  header: { fontSize: 20, fontWeight: "bold", marginBottom: 20, color: "#111" },
-  label: { fontSize: 14, fontWeight: "600", marginTop: 15, marginBottom: 5 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: "#f9f9f9",
-  },
-  priorityRow: { flexDirection: "row", marginVertical: 10 },
-  priorityButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    marginRight: 10,
-  },
-  prioritySelected: { backgroundColor: "#007BFF", borderColor: "#007BFF" },
-  priorityText: { fontSize: 14, color: "#333" },
-  priorityTextSelected: { color: "#fff" },
-  photoButton: {
+  page: {
     flex: 1,
+    backgroundColor: '#f7fbff',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  header: {
+    width: '100%',
+    height: 220,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 18 : 60,
+    paddingHorizontal: 28,
+    paddingBottom: 24,
+  },
+  headerTitle: {
+    color: 'white',
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  headerSubtitle: {
+    color: 'rgba(255,255,255,0.9)',
+    marginTop: 6,
+    fontSize: 14,
+  },
+  card: {
+    width: '92%',
+    backgroundColor: 'white',
+    marginTop: -48,
+    borderRadius: 16,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  label: {
+    color: '#0f172a',
+    fontSize: 13,
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center",
-    marginHorizontal: 5,
-    backgroundColor: "#f9f9f9",
+    borderColor: '#e6eef8',
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    borderRadius: 12,
   },
-  photoBox: {
+  countryCode: {
+    marginRight: 10,
+    color: '#0f172a',
+    fontWeight: '700',
+  },
+  input: {
+    fontSize: 16,
+    color: '#0f172a',
+    padding: 0,
+  },
+  eyeButton: {
+    padding: 6,
+    marginLeft: 8,
+    borderRadius: 8,
+  },
+  eyeText: { fontSize: 18 },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    alignItems: 'center',
+  },
+  forgot: {
+    color: '#2563eb',
+    fontWeight: '600',
+  },
+  help: { color: '#6b7280' },
+  button: {
+    marginTop: 18,
+    backgroundColor: '#2563eb',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonText: { color: 'white', fontWeight: '700', fontSize: 16 },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 18,
+    gap: 12,
+  },
+  line: { flex: 1, height: 1, backgroundColor: '#eef4ff' },
+  orText: { marginHorizontal: 12, color: '#6b7280' },
+  ghostBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    height: 200,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 10,
-    marginBottom: 10,
+    borderColor: '#e6eef8',
   },
-  photoPreview: { width: "100%", height: "100%", borderRadius: 8 },
-  locationButton: {
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    backgroundColor: "#f9f9f9",
-    alignItems: "center",
-  },
-  locationText: { marginTop: 10, color: "#333", fontSize: 14 },
-  submitButton: {
-    backgroundColor: "#007BFF",
-    padding: 15,
-    borderRadius: 8,
-    marginTop: 25,
-    alignItems: "center",
-  },
-  submitText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  ghostText: { color: '#2563eb', fontWeight: '600' },
+  errorText: { color: '#ef4444', marginTop: 6, fontSize: 12 },
+  footer: { marginTop: 18, color: '#9aa4b2', fontSize: 12 },
 });
