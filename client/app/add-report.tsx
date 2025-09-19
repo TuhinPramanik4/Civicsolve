@@ -2,15 +2,15 @@ import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import React, { useState } from "react";
 import {
-    Alert,
-    Image,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Image,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -109,15 +109,19 @@ const pickFromGallery = async () => {
 
   const uploadImage = async (uri: string): Promise<string | null> => {
   try {
-    // Extract file extension
     const fileExt = uri.split(".").pop() ?? "jpg";
     const fileName = `${Date.now()}.${fileExt}`;
     const filePath = `issues/${fileName}`;
 
-    // Upload using Supabase Storage SDK
-    const { data, error } = await supabase.storage
+    // Fetch the file as ArrayBuffer
+    const response = await fetch(uri);
+    const buffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(buffer);
+
+    // Upload to Supabase
+    const { error } = await supabase.storage
       .from("issues-images")
-      .upload(filePath, uri, {
+      .upload(filePath, uint8Array, {
         cacheControl: "3600",
         upsert: false,
         contentType: `image/${fileExt}`,
@@ -146,54 +150,95 @@ const pickFromGallery = async () => {
 
 
 
-  // Submit report
-  const handleSubmit = async () => {
-    if (!title || !category || !location) {
-      Alert.alert("⚠️ Missing fields", "Please fill all required fields");
-      return;
-    }
 
-    try {
-      let imageUrl: string | null = null;
-      if (photo) {
-        imageUrl = await uploadImage(photo);
-        if (!imageUrl) {
-          Alert.alert("❌ Failed to upload image");
-          return;
-        }
+  // Submit report
+  // Submit report (send to backend for verification)
+const handleSubmit = async () => {
+  if (!title || !category || !location) {
+    Alert.alert("⚠️ Missing fields", "Please fill all required fields");
+    return;
+  }
+
+  try {
+    let imageUrl: string | null = null;
+    let authenticity = "unknown";
+
+    // Step 1: Verify photo authenticity if photo exists
+    if (photo && description) {
+      const formData = new FormData();
+      const filename = photo.split("/").pop() || "photo.jpg";
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : "image/jpeg";
+
+      formData.append("image", {
+        uri: photo,
+        name: filename,
+        type,
+      } as any);
+      formData.append("title", title);
+      const res = await fetch(
+        "https://sih-backend-3.onrender.com/api/v1/verify-photo",
+        { method: "POST", body: formData }
+      );
+
+      const json = await res.json();
+      console.log("Backend response:", json);
+
+      if (!res.ok) {
+        Alert.alert("❌ Failed verification", json.error || "Something went wrong");
+        return;
       }
 
-      const { error } = await supabase.from("issues").insert([
-        {
-          title,
-          category,
-          priority,
-          description,
-          img: imageUrl,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          city: address?.city,
-          district: address?.district,
-          region: address?.region,
-          postalcode: address?.postalCode,
-          country: address?.country,
-        },
-      ]);
-
-      if (error) throw error;
-
-      Alert.alert("✅ Report submitted!");
-      setTitle("");
-      setCategory("");
-      setPriority("Medium");
-      setDescription("");
-      setPhoto(null);
-      setLocation(null);
-      setAddress(null);
-    } catch (err: any) {
-      Alert.alert("❌ Submission failed", err.message);
+      authenticity = json.authenticity;
+      if (authenticity === "fake") {
+        Alert.alert("❌ Report rejected", "Photo and description don’t match");
+        return;
+      }
     }
-  };
+
+    // Step 2: Upload image if verification passed
+    if (photo) {
+      imageUrl = await uploadImage(photo);
+      if (!imageUrl) {
+        Alert.alert("❌ Failed to upload image");
+        return;
+      }
+    }
+
+    // Step 3: Submit report to Supabase
+    const { error } = await supabase.from("issues").insert([
+      {
+        title,
+        category,
+        priority,
+        description,
+        img: imageUrl,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        city: address?.city,
+        district: address?.district,
+        region: address?.region,
+        postalcode: address?.postalCode,
+        country: address?.country,
+   
+      },
+    ]);
+
+    if (error) throw error;
+
+    Alert.alert("✅ Report submitted!");
+    setTitle("");
+    setCategory("");
+    setPriority("Medium");
+    setDescription("");
+    setPhoto(null);
+    setLocation(null);
+    setAddress(null);
+  } catch (err: any) {
+    Alert.alert("❌ Submission failed", err.message);
+  }
+};
+
 const insets = useSafeAreaInsets();
   return (
    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['top']}>
